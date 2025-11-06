@@ -1,0 +1,161 @@
+---
+title: "Analyse de la variance à un facteur"
+author: "Bruno Langlois"
+date: "2025-11-04"
+output: html_document
+---
+
+## 1 $-$ Introduction
+
+Le jeu de données `PlantGrowth` contient les résultats d'une expérience sur la croissance de plantes. Il comporte **3 groupes de traitement** (`ctrl`, `trt1`, `trt2`) et **la masse sèche des plantes** mesurée après la période expérimentale.  
+  
+Le dataset contient 30 observations réparties également entre les trois groupes, ce qui rend le plan d’expérience équilibré.
+  
+Ce dataset est souvent utilisé pour illustrer des tests statistiques tels que l'ANOVA.  
+  
+L'objectif est de comparer la croissance moyenne entre les trois groupes.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##### **■ Chargement du dataset `PlantGrowth`**
+```{r}
+data(PlantGrowth)
+```
+
+## 2 $-$ Exploration des données
+
+```{r}
+head(PlantGrowth)   # les premières lignes
+str(PlantGrowth)    # structure du dataset
+summary(PlantGrowth) # résumé statistique
+```
+
+##### ■ Comparaison des histogrammes
+
+```{r hist-plantgrowth, fig.height=3, fig.width=10}
+par(mfrow = c(1,3))  # 1 ligne, 3 colonnes
+
+for(g in unique(PlantGrowth$group)){
+  hist(PlantGrowth$weight[PlantGrowth$group == g],
+       main = paste("Groupe", g),
+       xlab = "Poids",
+       ylab = "Effectif", 
+       col = "lightblue",
+       ylim = c(0, 3),
+       breaks = 10)
+}
+```
+
+##### ■ Poids moyen par groupe 
+
+```{r}
+tapply(PlantGrowth$weight, PlantGrowth$group, mean)
+```
+
+
+##### ■ Diagrammes en boîte
+```{r}
+boxplot(weight ~ group, data = PlantGrowth,
+        main = "Masse des plantes par groupe",
+        xlab = "Groupe",
+        ylab = "Poids",
+        col = c("lightblue", "lightgreen", "salmon"))
+```
+
+
+##### ■ Conclusion provisoire  
+Il ressort de l'analyse superficielle précédente que les poids moyens par groupes sont bien distincts (`trt1`<`ctrl`<`trt2`), et que les poids pour les groupes `trt1` et `trt2` sont presque séparés (75% des poids du groupe `trt1` sont inférieurs à tous les poids du groupe `trt2`) ;  Le groupe `ctrl` semble à mi-chemin entre les deux autres.  
+  
+Nous allons effectuer une ANOVA pour mesurer la significativité des différences observées précédemment.
+
+## 3 $-$ ANOVA
+
+#### ■ Analyse de la variance, significativité globale
+
+```{r}
+mod0<-lm(weight~group, data = PlantGrowth)
+anova(mod0)
+```
+
+Le test de Fisher associé à l'ANOVA (qui met à l'épreuve l'hypothèse $H_0:\mu_{\text{ctrl}}=\mu_{\text{trt1}}=\mu_{\text{trt2}}$) révèle une p-value égale à 0.01591, donc inférieure à 0.05. On peut donc conclure qu'il existe au moins deux groupes dont les poids moyens diffèrent significativement au seuil de 5%.  
+
+#### ■ Régression avec `ctrl` comme modalité de référence
+
+```{r}
+summary(mod0)
+```
+La p-value égale à 0.1944 (resp. 0.0877) est associée au test de l'hypothèse $H_0:\mu_{\text{ctrl}}=\mu_{\text{trt1}}$ (resp. $H_0:\mu_{\text{ctrl}}=\mu_{\text{trt2}}$). Au seuil de 5%, on ne peut donc pas rejeter $H_0$.  
+Par conséquent, le groupe contrôle n'admet pas un poids moyen significativement différent de celui des deux autres groupes.
+
+#### ■ Régression avec `trt1` comme modalité de référence
+
+```{r}
+mod1<-lm(weight~relevel(group,ref="trt1"), data = PlantGrowth)
+summary(mod1)
+```
+
+Sans surprise, pas de différence significativite entre les poids moyens des groupes `trt1` et `ctrl` (p-value correspondante égale à 0.19439>0.05). En revanche, les poids moyens des groupes `trt1` et `trt2` sont significativement différents (p-value correspondante égale à 0.00446<0.05).
+
+#### ■ Confirmation avec le test des étendues de Tukey (HSD)
+
+```{r}
+TukeyHSD(aov(mod0))
+```
+
+Seule la p-value correspondant à la comparaison `trt2-trt1` (égale à 0.0120064) est inférieure à 0.05, ce qui confirme parfaitement l'analyse précédente. 
+
+## 4 $-$ Vérification des hypothèses du modèle
+
+#### ■ Normalité des résidus
+
+```{r}
+res <- residuals(mod0)
+qqnorm(res,
+       main = "QQ-plot des résidus",
+       xlab = "Quantiles théoriques (normaux)",
+       ylab = "Quantiles des résidus")
+
+qqline(res)
+
+```
+
+Le diagramme quantile-quantile (QQ-plot) des résidus montre un alignement global correct avec la droite de référence. On observe cependant un écart dans la queue supérieure, ce qui peut suggérer une déviation modérée par rapport à la normalité.
+Dans un échantillon de petite taille $(n = 30)$, de tels écarts ne sont pas rares ; nous complétons néanmoins avec un test de Shapiro-Wilk pour confirmer. 
+
+```{r}
+shapiro.test(mod0$residuals)
+```
+
+Le test de Shapiro-Wilk met à l’épreuve l’hypothèse nulle $H_0$ : les erreurs suivent une loi normale.  
+La statistique $W$ est proche de 1 et la p-value (égale à 0.4379) est largement supérieure au seuil de 5 %. Nous ne rejetons donc pas $H_0$.  
+Combiné au QQ-plot, ce résultat soutient l’hypothèse de normalité des erreurs : aucune déviation sérieuse n’est détectée.
+
+#### ■ Homogénéité de la variance
+
+L'hypothèse de normalité des erreurs étant admise, on peut donc utiliser le test de Bartlett qui met à l'épreuve l'hypothèse nulle $H_0$ : les variances du poids des trois groupes sont égales.  
+
+```{r}
+bartlett.test(weight ~ group, data = PlantGrowth)
+```
+
+La p-value associée au test (égale à 0.2371) étant nettement supérieure au seuil de 5%, on ne rejette pas $H_0$, ce qui conduit à considérer plausible l'hypothèse d'égalité des variances (homoscédasticité).
+
+## 5 $-$ Conclusion
+
+Cette étude visait à comparer l'effet de trois traitements (contrôle, traitement 1 et traitement 2) sur la croissance de plantes, mesurée par leur masse sèche.  
+  
+L'analyse de variance à un facteur indique que les traitements ont un effet significatif sur la croissance des plantes (ANOVA, p ≈ 0.016).
+
+Les comparaisons post-hoc révèlent que :
+
+Le traitement 2 (`trt2`) produit des plantes significativement plus lourdes que le traitement 1 (`trt1`) (p ≈ 0.012).
+
+Le groupe contrôle (`ctrl`) occupe une position intermédiaire et ne diffère significativement ni de `trt1` (p ≈ 0.19) ni de `trt2` (p ≈ 0.088).  
+  
+Les hypothèses du modèle apparaissent globalement respectées : les résidus ne montrent pas de déviation majeure par rapport à la normalité et les variances des groupes sont comparables.
+  
+En résumé : parmi les trois conditions expérimentales, le traitement 2 apparaît comme le plus favorable à la croissance des plantes, tandis que le traitement 1 semble donner des plantes plus légères. Le groupe contrôle se situe entre les deux, sans différence significative.
+
+
+
