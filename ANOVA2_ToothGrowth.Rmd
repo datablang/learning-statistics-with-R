@@ -1,0 +1,243 @@
+---
+title: "Analyse de la variance à deux facteurs"
+author: "Bruno Langlois"
+date: "2025-11-06"
+output: html_document
+---
+
+## 1 $-$ Introduction
+
+Le jeu de données `ToothGrowth`, intégré à R, provient d’une étude sur l’effet de la vitamine C sur la croissance des dents chez le cobaye (_guinea pig_). Il comporte 60 observations décrivant la longueur des odontoblastes (variable **len**, unité : µm), cellules responsables de la formation de la dentine, en fonction de deux facteurs expérimentaux :  
+  
+**supp** : le type de supplément de vitamine C administré 
+  
+`VC` : acide ascorbique pur (vitamine C classique)  
+  
+`OJ` : jus d’orange  
+  
+**dose** : la dose de vitamine C administrée (en mg/jour), avec trois niveaux : 0.5, 1.0 et 2.0   
+  
+Les 60 observations sont réparties également entre les six traitements, ce qui rend le plan d’expérience équilibré.  
+  
+L’objectif est d’évaluer l’effet de la dose et du type de supplément sur la croissance des dents, ainsi que leur éventuelle interaction.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##### **■ Chargement du dataset `ToothGrowth`**
+```{r}
+data(ToothGrowth)
+```
+
+## 2 $-$ Exploration des données
+
+```{r}
+head(ToothGrowth)   # les premières lignes
+str(ToothGrowth)    # structure du dataset
+ToothGrowth$dose <- as.factor(ToothGrowth$dose) # Factorisation de la variable dose
+str(ToothGrowth)    # nouvelle structure du dataset
+summary(ToothGrowth) # résumé statistique
+```
+
+
+##### ■ Longueur moyenne par traitement
+
+```{r}
+tab <- with(ToothGrowth, tapply(len, list(supp, dose), mean))
+# Moyenne par supplément (ligne)
+tab_with_rowmean <- cbind(tab, Mean = rowMeans(tab))
+tab_with_rowmean
+```
+
+
+##### ■ Diagrammes en boîte
+```{r}
+library(ggplot2)
+# Création d'un facteur combiné pour le traitement
+ToothGrowth$treatment <- interaction(ToothGrowth$supp, ToothGrowth$dose, sep = " / ")
+# Palette harmonisée
+colors_supp <- c("VC" = "#1f77b4", "OJ" = "#ff7f0e")
+# Boxplot par traitement
+ggplot(ToothGrowth, aes(x = treatment, y = len, fill = supp)) +
+  geom_boxplot() +
+  scale_fill_manual(values = colors_supp) +
+  labs(title = "Longueur des dents par traitement (Supplément × Dose)",
+       x = "Traitement", y = "Longueur des odontoblastes (len)",
+       fill = "Supplément") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(hjust = 0.5)  # centre le titre
+  )
+```
+
+##### ■ Graphe d'interaction entre facteurs  
+
+```{r}
+# Graphe d'interaction simple
+ggplot(ToothGrowth, aes(x = dose, y = len, color = supp, group = supp)) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  scale_color_manual(values = c("VC" = "#1f77b4", "OJ" = "#ff7f0e")) +
+  labs(title = "Graphe d'interaction : dose × supplément",
+       x = "Dose (mg/jour)",
+       y = "Longueur moyenne des odontoblastes (len)",
+       color = "Supplément") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),       # titre centré
+    legend.position = "right",                    # légende à droite
+    legend.box.margin = margin(0, 0, 0, 12)      # petit décalage pour ne pas chevaucher
+  )
+```
+
+
+##### ■ Conclusion provisoire  
+Il ressort de l'analyse superficielle précédente que la dose de supplément paraît avoir un effet sur la croissance des dents, indépendamment du supplément : plus la dose administrée est importante, plus la croissance des dents semble stimulée. La position relative des deux lignes brisées, et les longueurs moyennes (20.7 pour `OJ`, et 17 pour `VC`), suggèrent que le jus d'orange est globalement plus efficace que la vitamine C pure (même si cette différence d'efficacité disparaît au niveau 2 mg/jour) pour favoriser la croissance des dents.  
+  
+Les lignes brisées du graphe d'interaction n'étant pas parallèles (elles finissent par se croiser), on peut soupçonner la présence d'une interaction ; le fléchissement de la ligne brisée correspondant au jus d'orange évoque une légère perte d'efficacité de celui-ci au niveau 2 mg/jour.  
+  
+Nous allons effectuer une ANOVA pour mesurer la significativité des différences observées précédemment.
+
+## 3 $-$ ANOVA
+
+#### ■ Régression avec (`OJ`,`0.5`) comme traitement de référence $-$ Significativité globale
+
+```{r}
+mod0<-lm(len~supp+dose+supp:dose, data = ToothGrowth)
+summary(mod0)
+```
+
+On considère ici le modèle complet :  
+  
+<p style="text-align:center;">$Y_{ijk}=\mu+\alpha_i+\beta_j+\gamma_{ij}+\varepsilon_{ijk}$</p>
+
+Par défaut, pour estimer les paramètres du modèle, R utilise la contrainte : 
+  
+<p style="text-align:center;">$\alpha_{\text{OJ}}=\beta_{0.5}=\gamma_{OJ:0.5}=\gamma_{OJ:1}=\gamma_{OJ:2}=\gamma_{VC:0.5}=0$</p>  
+  
+Le traitement de référence est donc (`OJ`,`0.5`).   
+  
+Le test de Fisher associé à l'ANOVA, qui met à l'épreuve l'hypothèse 
+  
+<p style="text-align:center;">$H_0\,:\,\alpha_{\text{OJ}}=\alpha_{\text{VC}}=\beta_{0.5}=\beta_{1}=\beta_{2}=\gamma_{OJ:0.5}=\gamma_{OJ:1}=\gamma_{OJ:2}=\gamma_{VC:0.5}=\gamma_{VC:1}=\gamma_{VC:2}=0$</p>
+
+révèle une p-value inférieure à 2.2e-16, donc très nettement inférieure au seuil de 5%. On peut donc conclure que le traitement a un effet sur la croissance des dents chez le cobaye.  
+  
+D'autre part, on peut d'ores et déjà constater que :  
+- les longueurs moyennes des odontoblastes diffèrent significativement entre les cobayes auxquels on a administré de la vitamine C pure, et ceux qui ont reçu du jus d'orange (p-value p ≃ 0.002 << 0.05),  
+- même conclusion entre les cobayes qui ont reçu une dose de 0.5 mg/jour et ceux qui ont reçu une autre dose (p-values p ≃ 3.18e-07 << 0.05 et p ≃ 1.43e-10 << 0.05),  
+- même conclusion entre les cobayes qui ont reçu le traitement (`OJ`,`0.5`) et ceux qui ont reçu le traitement (`VC`,`2`).
+
+
+#### ■ Effet des facteurs et interaction
+
+```{r}
+anova(mod0)
+```
+
+Le test de l'hypothèse 
+  
+<p style="text-align:center;">$H_0\,:\,\alpha_{\text{OJ}}=\alpha_{\text{VC}}=0$</p>
+  
+conduit à une p-value p ≃ 0.0002 << 0.05, donc on rejette cette hypothèse, et on conclut que le facteur **supp** a un effet sur la longueur **len** des odontoblastes des cobayes.  
+  
+Le test de l'hypothèse 
+  
+<p style="text-align:center;">$H_0\,:\,\beta_{0.5}=\beta_{1}=\beta_{2}=0$</p>
+  
+conduit à une p-value inférieure à 2.2e-16, donc on rejette cette hypothèse, et on conclut que le facteur **dose** a un effet sur la longueur **len** des odontoblastes des cobayes.  
+   
+Le test de l'hypothèse 
+   
+<p style="text-align:center;">$H_0\,:\,\gamma_{OJ:0.5}=\gamma_{OJ:1}=\gamma_{OJ:2}=\gamma_{VC:0.5}=\gamma_{VC:1}=\gamma_{VC:2}=0$</p>
+  
+conduit à une p-value p ≃ 0.02 < 0.05, donc on rejette cette hypothèse, et on conclut à une interaction entre les deux facteurs **supp** et **dose** sur la longueur **len** des odontoblastes des cobayes.   
+
+#### ■ Comparaisons inter-traitements avec le test des étendues de Tukey (HSD)
+
+```{r}
+TukeyHSD(aov(mod0))
+```
+
+Pour affiner l'analyse précédente, nous utilisons le test de Tukey, qui permet de tester la significativité des différences de moyenne entre les traitements.  
+
+
+L'effet du traitement sur la croissance des dents du cobaye est confirmée. Seules 4 comparaisons sur 15 révèlent une p-value supérieure au seuil de 5% :  
+- sans surprise, la différence de moyenne entre les traitements (`OJ`,`2`) et (`VC`,2), très faible, n'est pas significative (la p-value est très proche de 1),  
+- la différence de moyenne entre les traitements (`OJ`,`2`) et (`OJ`,`1`) n'est pas significative, ce qui va dans le sens de notre première analyse : au niveau 2 mg/jour, l'action du jus d'orange sur la croissance des dents des cobayes ne diffère pas significativement de celle observée au niveau 1 mg/jour.
+
+## 4 $-$ Vérification des hypothèses du modèle
+
+#### ■ Normalité des résidus
+
+```{r}
+res <- residuals(mod0)
+qqnorm(res,
+       main = "QQ-plot des résidus",
+       xlab = "Quantiles théoriques (normaux)",
+       ylab = "Quantiles des résidus")
+
+qqline(res)
+
+```
+
+Le diagramme quantile-quantile (QQ-plot) des résidus montre un alignement global correct avec la droite de référence. On observe cependant un écart dans les queues supérieure et inférieure, ce qui laisse entrevoir une déviation modérée par rapport à la normalité.
+Dans un échantillon de taille modeste $(n = 60)$, de tels écarts ne sont pas rares ; nous complétons néanmoins avec un test de Shapiro-Wilk pour confirmer. 
+
+```{r}
+shapiro.test(mod0$residuals)
+```
+
+Le test de Shapiro-Wilk met à l’épreuve l’hypothèse nulle $H_0$ : les erreurs suivent une loi normale.  
+La statistique $W$ est proche de 1 et la p-value (égale à 0.6694) est très largement supérieure au seuil de 5 %. Nous ne rejetons donc pas $H_0$.  
+Combiné au QQ-plot, ce résultat soutient l’hypothèse de normalité des erreurs : aucune déviation sérieuse n’est détectée.
+
+#### ■ Homogénéité de la variance
+
+L'hypothèse de normalité des erreurs étant admise, on peut donc utiliser le test de Bartlett qui  met à l'épreuve l'hypothèse d'homoscédasticité.  
+  
+##### ■■ Test de Bartlett sur le facteur `dose` 
+
+```{r}
+bartlett.test(len ~ dose, data = ToothGrowth)
+```
+
+##### ■■ Test de Bartlett sur le facteur `supp` 
+```{r}
+bartlett.test(len ~ supp, data = ToothGrowth)
+```
+
+##### ■■ Test de Bartlett sur les combinaisons `dose` × `supp`
+```{r}
+ToothGrowth$group <- interaction(ToothGrowth$dose, ToothGrowth$supp)
+bartlett.test(len ~ group, data = ToothGrowth)
+```
+
+##### ■■ Diagrammes en boîte pour visualiser les variances
+
+```{r}
+par(mfrow = c(1,3))  # 3 graphiques côte à côte
+boxplot(len ~ dose, data = ToothGrowth, main="Len ~ Dose", col="lightblue")
+boxplot(len ~ supp, data = ToothGrowth, main="Len ~ Supp", col="lightgreen")
+boxplot(len ~ group, data = ToothGrowth, main="Len ~ Dose × Supp", col="lightpink")
+```
+
+
+Les p-values associées aux tests (égales à 0.717, 0.2331 et 0.2261) sont nettement supérieures au seuil de 5%, on ne rejette pas $H_0$, ce qui conduit à considérer plausible l'hypothèse d'égalité des variances (homoscédasticité).
+
+## 5 $-$ Conclusion
+
+Cette étude visait à comparer l'effet de deux suppléments en vitamine C (jus d'orange et vitamine C pure) et de trois dosages (0.5, 1 et 2 mg/jour) sur la croissance des dents des cobayes.
+
+L'analyse de variance à deux facteurs montre que le traitement **dose** × **supp** a un effet significatif sur la croissance des dents (p-value globale < 2.2e-16). Chacun des facteurs pris séparément (**supp** et **dose**) est également significatif (p-values respectives 0.0002 et < 2.2e-16). L’interaction entre dose et type de supplément est significative (p ≈ 0.022), suggérant que l’effet de la dose peut légèrement varier selon le supplément, bien que cette variation reste modeste.
+
+Les comparaisons multiples (test de Tukey) révèlent que la différence entre les doses de 1 mg/jour et 2 mg/jour n’est pas significative pour certains traitements (OJ, 1 vs OJ, 2 et OJ, 1 vs VC, 2). En revanche, la dose de 1 mg/jour produit un effet significativement supérieur à la dose de 0.5 mg/jour.
+
+Les hypothèses du modèle sont globalement respectées : les résidus ne présentent pas de déviation majeure par rapport à la normalité et les variances des groupes sont comparables.
+
+En résumé, la vitamine C favorise la croissance des dents chez les cobayes, avec un léger avantage pour le jus d'orange. L’augmentation de la dose de 1 mg/jour à 2 mg/jour ne produit pas de gain significatif, tandis que la dose de 1 mg/jour est nettement plus efficace que 0.5 mg/jour.
+
+
+
