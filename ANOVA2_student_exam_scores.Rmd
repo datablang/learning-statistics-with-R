@@ -1,0 +1,322 @@
+---
+title: "Régression multiple"
+author: "Bruno Langlois"
+date: "2025-11-11"
+output: html_document
+---
+  
+## 1 $-$ Introduction
+
+Le jeu de données **Student Exam Score** contient des informations sur 200 étudiants dont leurs performances aux évaluations. Les variables incluses sont :  
+  
+`study_hours` : nombre d’heures d’étude consacrées par l’étudiant.  
+  
+`sleep_hours` : nombre d’heures de sommeil par nuit.  
+  
+`attendance_percentage` : assiduité (pourcentage de présence en cours).  
+  
+`previous_score` : score (sur 100) obtenu à l’examen précédent.  
+  
+`final_score` : score (sur 100) obtenu à l’examen actuel (variable à expliquer).  
+  
+Chaque ligne correspond à un étudiant différent. Ce dataset permet d’analyser comment différents facteurs liés au comportement et à la préparation influencent la performance à l'examen.  
+  
+L’objectif principal de cette analyse est de modéliser le score final (`final_score`) des étudiants en fonction de plusieurs facteurs explicatifs. Plus précisément, nous chercherons à :  
+  
+- Explorer graphiquement et statistiquement les relations entre le score final et les variables explicatives (`study_hours`, `sleep_hours`, `attendance_percentage` et `previous_score`).  
+  
+- Ajuster un modèle de régression linéaire multiple afin de prédire le score final à partir de ces facteurs.  
+  
+- Évaluer la qualité du modèle (R², ajustement, significativité des coefficients) et identifier les variables les plus influentes.  
+  
+Cette analyse permettra de mieux comprendre comment différents aspects de la préparation et du comportement étudiant influencent les performances à un examen, et de prédire, de manière statistique, les résultats à partir de données observables.  
+  
+⚠️ Dans un but pédagogique, nous introduirons artificiellement deux variables "intruses".  
+  
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##### **■ Chargement du dataset Student Exam Score**
+```{r}
+library(readr)
+url <- "https://raw.githubusercontent.com/datablang/learning-statistics-with-R/main/student_exam_scores.csv"
+ses <- read_csv(url,show_col_types = FALSE)
+```
+  
+## 2 $-$ Exploration des données  
+
+```{r}
+spec(ses) # nom et type des variables
+ses <- ses[, -1] # élimination de la colonne contenant l'identifiant
+names(ses) <- c("study", "sleep", "attend", "prev", "exam") # raccourcissement du nom des variables
+set.seed(123)  # pour la reproductibilité
+ses$study2 <- -0.6*ses$study  + rnorm(nrow(ses), mean = 0, sd = 1)/2 # nouvelle variable très corrélée à study
+ses$noise <- rnorm(nrow(ses), mean = 0, sd = 1)  # ajout d'un petit bruit indépendant
+ses <- ses[, c("study", "sleep", "attend", "prev", "study2", "noise", "exam")]
+```
+  
+Raccourcissement du nom des variables :  
+  
+`study_hours` → `study`  
+`sleep_hours` → `sleep`  
+`attendance_percentage` → `attend`  
+`previous_score` → `prev`  
+`final_score` → `exam`  
+  
+et création de deux nouvelles variables :  
+  
+`study2` : très corrélée à `study`  
+
+`noise` : constituée de "bruit" et qui n'explique rien  
+  
+
+```{r ggpairs_plot, fig.width=10, fig.height=7}
+head(ses) # les premières lignes
+summary(ses) # résumé statistique
+library(ggplot2)
+library(GGally)
+# un nuage de points pour chaque paire de variables :
+ggpairs(
+  ses,
+  lower = list(continuous = wrap("points", alpha = 0.6, size = 1.5)),   # nuages de points semi-transparents
+  upper = list(continuous = wrap("cor", size = 5)),                     # corrélation en haut
+  diag  = list(continuous = wrap("densityDiag", fill = "skyblue", alpha = 0.5)) # densités lissées diagonale
+) +
+  ggtitle("Nuages de points par couple de variables, corrélations, et densités lissées") +
+  theme(plot.title = element_text(hjust = 0.5, margin = margin(b = 10))) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(hjust = 0.5)) + # titre centré
+  theme(plot.title = element_text(hjust = 0.5, size = 16))  # taille et gras
+```
+
+L’examen des nuages de points suggère une relation linéaire entre `exam` et les variables `study`, `prev` et `study2` : dans chaque cas, les points semblent alignés le long d’une droite inclinée. Les corrélations correspondantes (égales respectivement à 0.777, 0.431 et -0.760), proches de ±1, valident numériquement cette impression visuelle.  
+  
+La corrélation correspondant au couple (`study`,`study2`), égale à -0.971, est très proche de -1. On peut d'ores et déjà soupçonner la présence de colinéarité.  
+  
+## 3 $-$ Régression linéaire multiple  
+  
+#### ■ Estimation des paramètres du modèle complet  
+  
+```{r}
+reg1 <- lm(exam~., data=ses)
+summary(reg1)
+```
+
+Le test de significativité globale du modèle, qui met à l'épreuve l'hypothèse  
+
+$$ H_0 : \beta_{\text{study}} = \beta_{\text{sleep}} = \beta_{\text{attend}} = \beta_{\text{prev}} =\beta_{\text{study2}}=\beta_{\text{noise}} = 0 $$
+
+conduit à une p-value inférieure à 2.2e-16 et donc largement en deçà du seuil de 5%. On rejette donc $H_0$, ce qui implique qu'au moins une variable explicative a un effet significatif sur la note finale.
+  
+Les tests de significativité individuels des paramètres associés aux variables  `study`, `sleep`, `attend` et `prev` (l'hypothèse nulle consistant à supposer que le paramètre en question est nul) conduisent tous à une p-value négligeable, très inférieure au seuil de 5%. On rejette donc les hypothèses correspondantes et on conclut que chacune des 4 variables précédentes a une influence significative sur la note finale à l'examen.  
+  
+Le coefficient de détermination R² = 0,8424 indique que le modèle explique environ 84 % de la variabilité de la note finale, ce qui traduit une excellente qualité d’ajustement.  
+  
+Les variables `study2` et `noise` n’exercent pas d’effet significatif sur la note finale, ce qui était attendu pour ces variables ajoutées artificiellement.  
+  
+## 4 $-$ Diagnostic de colinéarité  
+  
+Nous allons tenter de confirmer le soupçon de colinéarité entre les variables `study` et `study2` (corrélation égale à -0.971), en utilisant le facteur d'inflation de la variance (VIF) :  
+  
+```{r}
+library(carData)
+library(car)
+vif(reg1)
+```
+  
+Comme on pouvait s'y attendre, on constate que VIF(`study`) et VIF(`study2`) dépassent nettement le seuil de 3, ce qui est généralement considéré comme le signe d'une colinéarité notable.  
+  
+Les conditions index vont également dans ce sens : 
+  
+```{r message=FALSE, warning=FALSE}
+library(olsrr)
+round(ols_eigen_cindex(reg1), 2)
+```
+  
+En effet, on observe que la plus petite valeur propre (λ ≃ 0.01) présente un condition index supérieur à 30, ce qui est un indice sérieux de présence de multicolinéarité. En observant les proportions de variation associées à cette valeur propre, on remarque que celles de `study` et `study2` sont très élevées (0.98 dans les deux cas), ce qui valide l'hypothèse d'une colinéarité entre ces deux variables.
+  
+## 5 $-$ Sélection des variables  
+  
+Dans notre dataset, on a 6 variables explicatives, c'est suffisamment peu pour pouvoir effectuer une sélection exhaustive (en anglais, cette procédure est baptisée _best subset regression_). Après avoir ajusté tous les sous-modèles, on affiche le modèle le mieux ajusté avec une variable, puis avec deux variables, puis avec trois variables explicatives, etc. :
+
+```{r}
+# Exécuter la recherche exhaustive
+resultats <- ols_step_best_subset(reg1)
+# Extraireet afficher la liste des sous-modèles
+sous_modeles <- resultats$metrics$predictors
+print(sous_modeles)
+```
+  
+Ensuite on compare ces modèles optimaux en utilisant plusieurs critères :
+  
+```{r}
+# Extraire le data frame "metrics"
+metrics_df <- resultats$metrics
+# Sélectionner uniquement les colonnes souhaitées
+resultats_final <- metrics_df[, c("adjr", "predrsq", "cp", "aic")]
+# Renommer les colonnes pour plus de clarté
+colnames(resultats_final) <- c("Adj. R-Square", "Pred R-Square", "C(p)", "AIC")
+# Afficher les résultats
+print(resultats_final)
+```
+  
+On observe que selon tous les critères, le meilleur modèle est celui à 4 prédicteurs : `study`, `sleep`, `attend` et `prev`. 
+  
+On peut également effectuer une régression pas à pas descendante (en anglais, _backward elimination_), méthode moins gourmande en calcul que la sélection exhaustive. À titre d’exemple, appliquons-la en utilisant l’AIC (Akaike Information Criterion) comme critère : à chaque étape, on retire la variable dont la suppression améliore le plus le modèle, tant que l’AIC du modèle réduit reste inférieure à celle du modèle complet. Le processus s’arrête dès qu’aucune suppression ne permet d’abaisser davantage l’AIC.
+    
+```{r}
+ols_step_backward_aic(model = reg1, detail = T)
+```
+  
+On constate que le sous-modèle retenu avec cette méthode est le même qu'avec la sélection exhaustive.  
+  
+## 6 $-$ Validation du modèle réduit
+  
+Ici, nous avons effectué une sélection exhaustive, et le modèle réduit optimal est celui obtenu en retirant du modèle complet les deux variables dont les paramètres n’étaient pas significatifs.
+Dans ce contexte, les p-values issues du test des modèles emboîtés réduit/complet — comme celles de la régression du modèle réduit — peuvent être optimistes, car le modèle a été choisi après avoir observé les données.  
+Nous allons néanmoins les présenter, mais il faudra interpréter ces diagnostics avec prudence.  
+  
+```{r}
+# Modèle réduit (remplace par tes variables retenues)
+reg2 <- lm(exam ~ study + sleep + attend + prev, data = ses)
+summary(reg2)
+# Test F des modèles emboîtés
+anova(reg2, reg1)
+
+```
+  
+Sans surprise, les p-values issues de la régression du modèle réduit sont très faibles, ce qui suggère que les variables conservées expliquent bien la réponse.  
+  
+
+Le test des modèles emboîtés, qui met à l'épreuve l'hypothèse
+  
+$$H_0 : \beta_{\text{study2}}=\beta_{\text{noise}}=0$$
+  
+donne une p-value de 0.5621, donc largement supérieure au seuil de 5%. On ne peut donc pas rejeter $H_0$, ce qui confirme que les deux variables retirées n'apportaient aucune information utile.  
+  
+## 7 $-$ Diagnostic des résultats de régression  
+  
+#### ■ Analyse des résidus  
+  
+```{r}
+library(broom)
+# Extraire les résidus studentisés et valeurs ajustées
+df_diag <- augment(reg2)  # contient .fitted et .std.resid
+# Graphique résidus studentisés vs valeurs ajustées
+ggplot(df_diag, aes(x = .fitted, y = .std.resid)) +
+  geom_point(color = "darkblue") +                       # points
+  geom_smooth(method = "loess", se = FALSE, color = "red", formula = y ~ x, linewidth = 0.6) + # courbe lisse
+  geom_hline(yintercept = 0, linetype = "dashed") +     # ligne 0
+  labs(
+    x = "Valeurs ajustées",
+    y = "Résidus studentisés",
+    title = "Résidus studentisés vs valeurs ajustées"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))  # centre le titre
+```
+  
+Le graphique ne montre aucune structure particulière dans les résidus. La dispersion semble aléatoire et homogène, ce qui va dans le sens des hypothèses d’homoscédasticité et de linéarité. La courbe de tendance reste proche de zéro ; une légère courbure apparaît mais ne remet pas en cause le modèle.  
+  
+Effectuons le test de Durbin-Watson pour vérifier l’indépendance des résidus au sens de l’absence d'autocorrélation.  
+  
+```{r}
+durbinWatsonTest(reg2)
+```
+  
+Ce test met à l'épreuve l'hypothèse nulle d'absence d'autocorrélation des erreurs. Il donne une p-value de 0.826, très largement supérieure au seuil de 5%, donc on ne rejette pas cette hypothèse et on conclut à l'absence d'autocorrélation.  
+  
+Cependant, ce test est conçu pour des données ordonnées dans le temps ; dans notre cas, les observations sont indépendantes les unes des autres, et l'usage de ce test n'est donc pas forcément pertinent dans notre contexte.  
+  
+On peut aussi tester aussi l’hypothèse nulle d’homoscédasticité grâce au test de Breusch-Pagan (dans la version proposée par Koenker, robuste à une éventuelle violation de l’hypothèse de normalité des erreurs).  
+  
+```{r libs, message=FALSE}
+library(zoo)
+library(lmtest)
+bptest(reg2)
+```
+
+La p-value associée au test, égale à 0.9236, est très largement supérieure au seuil de 5%, par conséquent, on ne rejette pas l'hypothèse d'homoscédasticité : rien n’indique une variance non constante des erreurs.  
+  
+Passons maintenant au contrôle de la normalité des résidus en commençant par tracer le diagramme quantile-quantile (QQ-plot) qui compare les quantiles des résidus observés à ceux d’une loi normale.  
+  
+```{r}
+# Extraire les résidus
+residus <- resid(reg2) 
+# QQ-plot classique
+qqnorm(residus)
+qqline(residus, col = "red", lwd = 2)
+```
+  
+Environ 85% des points sont globalement alignés sur la droite de référence, cependant les queues de distribution sont "lourdes", ce qui peut pourrait signifier une violation de l'hypothèse de normalité des erreurs. 
+  
+Pour le confirmer, nous allons effectuer le test de Shapiro-Wilk, qui met à l'épreuve l'hypothèse nulle de normalité des erreurs.  
+  
+```{r}
+shapiro.test(reg2$residuals)
+```
+  
+La p-value associée au test est égale à 0.0001112 << 0.05, ce qui conduit au rejet de l'hypothèse de normalité des erreurs. Étant donné la taille de l’échantillon, les estimateurs restent fiables, mais il convient d’interpréter le modèle avec prudence, en gardant à l’esprit que les intervalles de confiance et les tests de significativité peuvent être affectés par une non-normalité.
+  
+#### ■ Détection des points aberrants et influents  
+  
+Commençons par tracer le graphique des leviers.  
+  
+```{r}
+df_diag <- augment(reg2)
+# Seuil de levier
+seuil_levier <- 2 * length(coefficients(reg2)) / nrow(df_diag)
+
+ggplot(df_diag, aes(x = seq_along(.hat), y = .hat)) +
+  geom_col(width = 0.5, colour = "blue", fill = NA) +
+  geom_hline(yintercept = seuil_levier, colour = "red", linewidth = 0.8, linetype = "dashed") +
+  
+  # Étiquette seulement pour les points au-dessus du seuil
+  geom_text(
+    data = subset(df_diag, .hat > seuil_levier),
+    aes(label = rownames(ses)[.hat > seuil_levier]),
+    vjust = -0.6,
+    size = 3
+  ) +
+  
+  labs(
+    x = "Observation",
+    y = "Levier",
+    title = "Valeurs de levier (hat-values)"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+  
+Aucun levier ne dépasse le seuil habituellement fixé à $\dfrac{2(p+1)}{n}$ (ici avec p = 4 et n = 200), soit 0.05. Aucune observation ne semble donc exercer une influence excessive sur l’estimation des coefficients.  
+  
+Poursuivons avec le diagramme de la distance de Cook.  
+  
+```{r}
+# Calculer les distances de Cook
+cooks <- cooks.distance(reg2)
+n <- nrow(ses)
+seuil <- 4/n
+# Diagramme ggplot sans incrustation automatique
+ggplot(data.frame(obs = seq_along(cooks), cooks = cooks), aes(x = obs, y = cooks)) +
+  geom_col(width = 0.1, colour = "blue") +              # les barres
+  geom_point(colour = "darkgreen", size = 1.5) +          # les petits ronds
+  geom_hline(yintercept = seuil, colour = "red", linetype = "dashed") +
+  labs(x = "Observations", y = "Distance de Cook") +
+  theme_minimal()
+```
+  
+Six observations présentent une distance de Cook supérieure au seuil très conservatif de 4/n. Toutefois, leurs valeurs restent nettement inférieures au seuil usuel de 1, ce qui indique qu’aucune observation ne peut être considérée comme réellement influente sur l’estimation des coefficients.  
+  
+## 8 $-$ Conclusion  
+  
+Le diagnostic du modèle de régression complet révèle l'influence d'au moins une des six variables explicatives sur la variable `exam`. Seules les estimations des paramètres des deux variables ajoutées artificiellement (`study2` et `noise`) s'évèrent non significatives. Une sélection exhaustive aboutit précisément au modèle réduit obtenu en privant le modèle complet de ces deux variables. La qualité d'ajustement de celui-ci est excellente : il explique environ 84% de la variabilité de la note finale à l'examen.  
+Parmi les hypothèses que doivent vérifier ce modèle réduit, seule celle concernant la normalité des erreurs est sujette à caution (le test de Shapiro-Wilk conduit à son rejet), néanmoins la taille de l'échantillon permet d'avoir une confiance raisonnable en la fiabilité des estimateurs.  
+Aucune observation aberrante ou spécialement influente ne ressort de l'analyse.  
+  
+Le temps passé à étudier, le sommeil, le résultat à l’évaluation précédente et l’assiduité influencent le résultat à l’examen, l’effet du temps d’étude se détachant particulièrement (corrélation avec exam = 0.777).  
+  
+Ce modèle pourrait permettre de prédire les résultats des étudiants à partir de données observables sur leur préparation et leur assiduité.
+
+  
